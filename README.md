@@ -219,6 +219,11 @@ Each row is one allele group. `NA` indicates no gene assigned for that haplotype
 | [OrthoFinder](https://github.com/davidemms/OrthoFinder) *(optional)* | Orthogroup inference |
 
 ---
+## Citation
+
+> Manuscript in preparation. Citation will be added upon publication.
+
+---
 
 ## License
 
