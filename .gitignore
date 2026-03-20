@@ -1,0 +1,90 @@
+# ===== Bioinformatics large data files =====
+# FASTA / sequence files
+*.fasta
+*.fa
+*.fna
+*.faa
+*.fastq
+*.fq
+*.fasta.fai
+*.fa.fai
+
+# GFF/GTF annotation files (large)
+# *.gff    # uncomment if you don't want to track gff files
+# *.gff3
+
+# BLAST databases
+*.nhr
+*.nin
+*.nsq
+*.nsd
+*.nsi
+*.njs
+*.ndb
+*.not
+*.ntf
+*.nto
+*.phr
+*.pin
+*.psq
+*.psd
+*.psi
+*.pjs
+*.pdb
+*.pot
+*.ptf
+*.pto
+
+# LAST index files
+*.bck
+*.des
+*.prj
+*.sds
+*.ssp
+*.suf
+*.tis
+
+# BLAST output temp files
+*.blast.tmp
+*.blast
+
+# JCVI intermediate files
+*.last
+*.last.filtered
+*.lifted.anchors
+
+# ===== Pipeline output directories =====
+standardized_results/
+00.OrthoFinder_Auto/
+
+# ===== Logs =====
+Allele.log
+*.log
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.pytest_cache/
+
+# ===== Jupyter =====
+.ipynb_checkpoints/
+*.ipynb
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ===== Conda =====
+.conda/

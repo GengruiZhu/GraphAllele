@@ -1,0 +1,21 @@
+name: polyalleler
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pip
+  # Python packages
+  - biopython>=1.79
+  - pandas>=1.3
+  - networkx>=2.6
+  # Bioinformatics tools
+  - blast>=2.12
+  - gffread>=0.12
+  - last>=1187
+  - jcvi>=1.3
+  # Optional: OrthoFinder (uncomment if needed)
+  # - orthofinder>=2.5
+  - pip:
+  # Any pip-only packages can go here
