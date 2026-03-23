@@ -14,6 +14,7 @@ A graph-constrained pipeline for constructing standardized allele matrices in po
 - [Usage](#usage)
 - [Output Description](#output-description)
 - [Dependencies](#dependencies)
+- [Changelog](#changelog)
 - [License](#license)
 - [Contact](#contact)
 
@@ -30,10 +31,10 @@ Chromosome naming convention required: `Chr{NUM}{SUFFIX}`, e.g., `Chr1A`, `Chr1B
 ## Features
 
 - **Breakpoint-resumable**: each step is checkpointed and skipped automatically on re-run
-- **Parallel processing**: chromosome groups are processed concurrently via Python multiprocessing
+- **Sequential processing**: chromosome groups are processed one by one for stable, readable logging
 - **Graph-constrained clustering**: NetworkX-based extraction of syntenic connected components
 - **Tandem duplication filtering**: self-BLASTP + graph-based tandem array blacklisting
-- **OrthoFinder integration**: supports pre-computed `Orthogroups.tsv` or auto-run mode
+- **Intra-group OrthoFinder with early termination**: OrthoFinder is run independently per chromosome group; the process is killed immediately after `Orthogroups.tsv` is written to disk, skipping the MSA and tree-building phases to reduce runtime
 - **Reference calibration**: TBLASTN-based anchoring to an external reference genome
 - **Standardized output**: fixed-column allele matrix with globally unique cluster IDs
 
@@ -149,7 +150,7 @@ python GraphAllele.py [OPTIONS]
 | Argument | Default | Description |
 |---|---|---|
 | `-og / --orthogroups` | None | Pre-computed OrthoFinder `Orthogroups.tsv` |
-| `--auto_og` | False | Auto-run OrthoFinder internally (slow for large genomes) |
+| `--auto_og` | False | Run OrthoFinder automatically per chromosome group |
 | `-s / --start` | 1 | Start chromosome number |
 | `-e / --end` | 10 | End chromosome number |
 | `-t / --threads` | 10 | Total CPU threads |
@@ -165,7 +166,7 @@ python GraphAllele.py [OPTIONS]
 
 **`--min_c`**: a cluster must span at least this many distinct haplotype chromosomes to be retained.
 
-**OrthoFinder**: it is strongly recommended to run OrthoFinder independently and supply the result via `-og`. The `--auto_og` mode is provided for convenience but is not suitable for large polyploid genomes.
+**`--auto_og`**: when enabled, OrthoFinder is run once per chromosome group using only the haplotype PEP files for that group. The process is terminated automatically after `Orthogroups.tsv` is written, before MSA and tree steps. It is still recommended to supply a pre-computed `-og` file when one is available.
 
 ---
 
@@ -175,6 +176,7 @@ python GraphAllele.py [OPTIONS]
 standardized_results/
 ├── Group_Chr01/
 │   ├── 01.prepare/               # Per-haplotype GFF, FASTA, CDS, BED, PEP
+│   ├── 01.5.OrthoFinder_Intra/   # Intra-group OrthoFinder results (--auto_og only)
 │   ├── 02.tandem/                # Merged GFF/PEP + tandem blacklist
 │   ├── 03.jcvi/                  # Pairwise .anchors files
 │   ├── 04.cluster.tsv            # Raw synteny clusters
@@ -220,6 +222,23 @@ Each row is one allele group. `NA` indicates no gene assigned for that haplotype
 
 ---
 
+## Changelog
+
+### v2.0
+- Replaced whole-genome OrthoFinder with intra-group OrthoFinder: each chromosome group runs its own OrthoFinder instance using only the haplotype PEP files for that group
+- Added early-termination logic (Visual Sniper): monitors the OrthoFinder log in real time and sends SIGKILL to the process group immediately after `Orthogroups.tsv` is confirmed on disk, skipping MSA and tree-building steps
+- Changed pipeline execution from parallel to sequential for cleaner and more readable log output
+- Improved error handling and log clarity across all steps
+
+### v1.0
+- Initial release
+
+---
+## Citation
+
+> Manuscript in preparation. Citation will be added upon publication.
+
+---
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
