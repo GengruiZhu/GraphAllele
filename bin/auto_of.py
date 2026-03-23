@@ -1,125 +1,123 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
+import time
+import signal
 import subprocess
 from Bio import SeqIO
 from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
 
-def run_cmd(cmd, cwd=None):
-    """
-    General function to execute system commands.
-    Catches exceptions and exits to prevent cascading errors downstream.
-    """
+def run_cmd(cmd, cwd=None, log_file=None):
+    """Log"""
     try:
-        subprocess.run(cmd, check=True, cwd=cwd)
+        if log_file:
+            with open(log_file, "w") as f:
+                subprocess.run(cmd, check=True, cwd=cwd, stdout=f, stderr=f)
+        else:
+            subprocess.run(cmd, check=True, cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError as e:
-        print(f"[ERROR] Auto OrthoFinder step failed: {' '.join(cmd)}")
+        print(f"\n[FATAL ERROR] External software crashed!")
+        print(f"[COMMAND] {' '.join(cmd)}")
+        print(f"[CHECK LOG] {log_file if log_file else 'N/A'}")
         sys.exit(1)
 
-def clean_protein_fasta(raw_pep, clean_pep):
-    """
-    Protein sequence sanitization engine:
-    1. Strip trailing stop codons (*)
-    2. Replace internal premature stop codons or invalid placeholders (* or .) with unknown amino acid (X)
-    3. Filter out exceedingly short invalid sequences (length < 10 aa)
-    """
-    print(f"[INFO] Sanitizing protein sequences: {raw_pep}")
-    valid_records = []
-    
-    with open(raw_pep, "r") as handle:
-        for record in SeqIO.parse(handle, "fasta"):
-            # Extract sequence and convert to uppercase string
-            seq_str = str(record.seq).upper()
-            
-            # Action 1: Strip trailing asterisk (stop codon)
-            if seq_str.endswith('*'):
-                seq_str = seq_str[:-1]
-            
-            # Action 2: Replace internal asterisks or dots with the valid unknown amino acid symbol 'X'
-            seq_str = seq_str.replace('*', 'X').replace('.', 'X')
-            
-            # Action 3: Length fail-safe filtering (discard garbage sequences < 10 aa)
-            if len(seq_str) >= 10:
-                clean_record = SeqRecord(Seq(seq_str), id=record.id, description="")
-                valid_records.append(clean_record)
-    
-    # Write out the sanitized sequences
-    with open(clean_pep, "w") as out_handle:
-        SeqIO.write(valid_records, out_handle, "fasta")
-    
-    print(f"[SUCCESS] Sequence sanitization complete! Retained {len(valid_records)} high-quality protein sequences.")
-
-def run_global_orthofinder(gff, fasta, outdir, threads, start_chr, end_chr):
-    """
-    Automated OrthoFinder scheduling module.
-    Note: Retained as a general bioinformatics module. However, for high-ploidy 
-    complex genomes like sugarcane, it is strongly recommended to skip this 
-    and run OrthoFinder independently.
-    """
-    print("\n" + "="*60)
-    print("[WARNING] Triggering fully automated OrthoFinder clustering engine!")
-    print("[WARNING] Strict notice: For high-ploidy large genomes, this step may take days to weeks.")
-    print("[WARNING] Highly recommended to run OrthoFinder independently and mount the results using the -og parameter in the main program!")
-    print("="*60 + "\n")
-    
-    # 1. Create an independent working sandbox directory
-    of_dir = os.path.join(outdir, "00.OrthoFinder_Auto")
-    os.makedirs(of_dir, exist_ok=True)
-    raw_pep = os.path.join(of_dir, "WholeGenome_raw.pep")
-    clean_pep = os.path.join(of_dir, "WholeGenome_clean.pep")
-    
-    # 2. Extract whole-genome protein sequences (using gffread)
-    if not os.path.exists(raw_pep):
-        print(f"[INFO] Using gffread to translate whole-genome protein sequences from GFF and FASTA...")
-        run_cmd(['gffread', gff, '-g', fasta, '-y', raw_pep])
-    else:
-        print("[INFO] Raw whole-genome protein sequences already exist, skipping extraction.")
-        
-    # 3. Sequence Sanitization
-    if not os.path.exists(clean_pep):
-        clean_protein_fasta(raw_pep, clean_pep)
-    else:
-        print("[INFO] Sanitized high-quality protein sequences already exist, skipping sanitization step.")
-        
-    # 4. Prepare standard input environment for OrthoFinder
+def run_intra_group_orthofinder(pep_files_list, outdir, gid, threads):
+    of_dir = os.path.join(outdir, "01.5.OrthoFinder_Intra")
     fasta_dir = os.path.join(of_dir, "input_fasta")
     os.makedirs(fasta_dir, exist_ok=True)
-    target_pep = os.path.join(fasta_dir, "Species.fa")
     
-    # Create a symlink using absolute path to avoid physical copying and save disk space
-    if not os.path.exists(target_pep):
-        os.symlink(os.path.abspath(clean_pep), target_pep)
-        
-    # 5. Launch OrthoFinder core algorithm engine
-    print(f"[INFO] Launching OrthoFinder (Allocated physical threads: {threads})...")
-    run_cmd(['orthofinder', '-f', fasta_dir, '-t', str(threads)])
     
-    # 6. Dynamically locate and return the absolute path of the ultimate orthogroup file
     results_base = os.path.join(fasta_dir, "OrthoFinder")
-    if not os.path.exists(results_base):
-        print("[ERROR] OrthoFinder failed to generate the result directory! Possible run interruption or Out-Of-Memory (OOM).")
+    if os.path.exists(results_base):
+        subdirs = [os.path.join(results_base, d) for d in os.listdir(results_base) if d.startswith("Results_")]
+        if subdirs:
+            latest = max(subdirs, key=os.path.getmtime)
+            og_file_v2 = os.path.join(latest, "Orthogroups", "Orthogroups.tsv")
+            if os.path.exists(og_file_v2):
+                print(f"[INFO] OrthoFinder results already exist for {gid}, skipping.")
+                return og_file_v2
+
+    print(f"[INFO] [{gid}] Cleaning and Preparing FASTA files...")
+    
+    copied_count = 0
+    for pep_file in pep_files_list:
+        if "ref" not in os.path.basename(pep_file).lower() and pep_file.endswith(".pep"):
+            new_name = os.path.basename(pep_file).replace(".pep", ".fa")
+            dest_file = os.path.join(fasta_dir, new_name)
+            
+            cleaned_records = []
+            for record in SeqIO.parse(pep_file, "fasta"):
+                seq_str = str(record.seq).upper().replace('*', 'X').replace('.', 'X')
+                if seq_str.endswith('X'): seq_str = seq_str[:-1]
+                if len(seq_str) >= 10:
+                    record.seq = Seq(seq_str)
+                    cleaned_records.append(record)
+            
+            if cleaned_records:
+                SeqIO.write(cleaned_records, dest_file, "fasta")
+                copied_count += 1
+            
+    if copied_count < 2:
+        print(f"[ERROR] [{gid}] Only {copied_count} species found. Need >= 2.")
+        sys.exit(1)
+
+    safe_threads = threads
+    of_log = os.path.join(of_dir, f"{gid}_orthofinder_run.log")
+
+    print(f"[INFO] [{gid}] Launching OrthoFinder with VISUAL SNIPER ({copied_count} files, {safe_threads} threads).")
+    
+    cmd = ['orthofinder', '-f', fasta_dir, '-t', str(safe_threads), '-og']
+    
+    
+    
+    
+    with open(of_log, "w") as f:
+        process = subprocess.Popen(cmd, stdout=f, stderr=f, preexec_fn=os.setsid)
+        
+    sniped = False
+    target_og_file = None
+
+    while process.poll() is None:
+        time.sleep(5)  
+        
+        
+        log_ready = False
+        if os.path.exists(of_log):
+            with open(of_log, "r") as log_f:
+                log_content = log_f.read()
+                if "Done orthogroups" in log_content or "Starting MSA/Trees" in log_content:
+                    log_ready = True
+
+        
+        if log_ready:
+            if os.path.exists(results_base):
+                subdirs = [os.path.join(results_base, d) for d in os.listdir(results_base) if d.startswith("Results_")]
+                if subdirs:
+                    latest_result_dir = max(subdirs, key=os.path.getmtime)
+                    possible_tsv = os.path.join(latest_result_dir, "Orthogroups", "Orthogroups.tsv")
+                    
+                    
+                    if os.path.exists(possible_tsv) and os.path.getsize(possible_tsv) > 0:
+                        print(f"\n[SNIPER] [{gid}] Log confirmed AND Target TSV visually confirmed on disk!")
+                        print(f"[SNIPER] [{gid}] Waiting 10 seconds for OS to safely close the file handle...")
+                        time.sleep(10)
+                        
+                        print(f"[SNIPER] [{gid}] Assassinating OrthoFinder to prevent combinatorial explosion...")
+                        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                        sniped = True
+                        target_og_file = possible_tsv
+                        break
+                    
+    
+    if not sniped and process.returncode != 0:
+        print(f"[ERROR] [{gid}] OrthoFinder crashed before TSV generation. Check log: {of_log}")
         sys.exit(1)
         
-    # Look for the latest output directory starting with Results_
-    subdirs = [os.path.join(results_base, d) for d in os.listdir(results_base) if d.startswith("Results_")]
-    if not subdirs:
-        print("[ERROR] Cannot find the specific Results_xxx directory!")
-        sys.exit(1)
-        
-    latest_result_dir = max(subdirs, key=os.path.getmtime)
+    # =========================================================================
     
-    # Version-compatible path sniffer (Handles both OrthoFinder v1.x and v2.x structures)
-    og_file_v2 = os.path.join(latest_result_dir, "Orthogroups", "Orthogroups.tsv")
-    og_file_v1 = os.path.join(latest_result_dir, "Orthogroups.tsv")
-    
-    if os.path.exists(og_file_v2):
-        og_file = og_file_v2
-    elif os.path.exists(og_file_v1):
-        og_file = og_file_v1
+    if target_og_file and os.path.exists(target_og_file):
+        print(f"[SUCCESS] [{gid}] Matrix Locked successfully by Visual Sniper!")
+        return target_og_file
     else:
-        print(f"[ERROR] Failed to find Orthogroups.tsv at the expected paths in {latest_result_dir}!")
+        print(f"[ERROR] [{gid}] Sniper logic failed, file not found after kill.")
         sys.exit(1)
-        
-    print(f"[SUCCESS] Automated OrthoFinder run completed successfully! Locked onto the panoramic orthogroup file: {og_file}")
-    return og_file

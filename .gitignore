@@ -88,3 +88,6 @@ Thumbs.db
 
 # ===== Conda =====
 .conda/
+workflow/anchors_output/
+workflow/my_clusters.tsv
+workflow/clean.py

@@ -7,7 +7,6 @@ import sys
 import networkx as nx
 from collections import defaultdict
 
-# 配置标准日志
 logging.basicConfig(
     level=logging.INFO,
     format='[%(asctime)s] [%(levelname)s] %(message)s',
@@ -15,7 +14,7 @@ logging.basicConfig(
 )
 
 def parse_gff_order(gff_file):
-    """解析 GFF：带有容错和异常检查机制"""
+    """解析 GFF"""
     gene_order = {}
     chrom_genes = defaultdict(list)
     
@@ -34,11 +33,11 @@ def parse_gff_order(gff_file):
             chrom = parts[0]
             info = parts[8]
             
-            # 防御性解析 ID
+      
             gene_id = None
             for field in info.split(';'):
                 if field.startswith('ID='):
-                    # 统一清洗逻辑
+                    
                     gene_id = field[3:].split('.')[0] 
                     break
             
@@ -49,7 +48,7 @@ def parse_gff_order(gff_file):
                 except ValueError:
                     logging.warning(f"Invalid start position at line {line_num}: {parts[3]}")
     
-    # 建立索引坐标系
+    
     for chrom, genes in chrom_genes.items():
         genes.sort(key=lambda x: x[0])
         for idx, (_, gene_id) in enumerate(genes):
@@ -59,7 +58,7 @@ def parse_gff_order(gff_file):
     return gene_order
 
 def run_self_blast(pep_file, out_blast, threads=4):
-    """运行全对全 BLASTP，带有严格的错误捕获"""
+    """BLASTP，"""
     if not os.path.exists(pep_file):
         logging.error(f"PEP file not found: {pep_file}")
         sys.exit(1)
@@ -71,7 +70,7 @@ def run_self_blast(pep_file, out_blast, threads=4):
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         
         logging.info(f"Running Self-BLASTP (Threads: {threads})...")
-        # 增加 identity 和 qcovs 输出用于严格过滤
+        
         subprocess.run([
             'blastp', '-query', pep_file, '-db', db_name,
             '-outfmt', '6 qseqid sseqid pident evalue', 
@@ -82,7 +81,7 @@ def run_self_blast(pep_file, out_blast, threads=4):
         sys.exit(1)
 
 def identify_tandems(blast_file, gene_order, out_tandem, max_distance=5, min_identity=50.0):
-    """核心图论算法：结合物理距离与严格的序列相似度过滤"""
+    """核心图论算法"""
     G = nx.Graph()
     
     try:
@@ -95,7 +94,7 @@ def identify_tandems(blast_file, gene_order, out_tandem, max_distance=5, min_ide
                 identity = float(parts[2])
                 
                 if g1 == g2: continue
-                # 严谨性增强：除了 e-value，强制校验 identity
+                
                 if identity < min_identity: continue
                 
                 if g1 in gene_order and g2 in gene_order:
@@ -109,7 +108,7 @@ def identify_tandems(blast_file, gene_order, out_tandem, max_distance=5, min_ide
         logging.error(f"BLAST output not found for tandem parsing: {blast_file}")
         sys.exit(1)
     
-    # 提取连通分量并输出
+    
     tandem_count = 0
     with open(out_tandem, 'w') as fout:
         for component in nx.connected_components(G):
@@ -146,7 +145,7 @@ def main():
         logging.error(f"Pipeline crashed due to an unexpected error: {str(e)}")
         sys.exit(1)
     finally:
-        # 工程严谨性：确保中间大文件一定会被清理
+        
         if os.path.exists(blast_out):
             os.remove(blast_out)
             logging.info("Temporary BLAST files cleaned up.")

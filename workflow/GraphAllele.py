@@ -2,10 +2,17 @@
 """
 PolyAlleler V6.2 - Standardized Allele Matrix Version (Graph-Constrained)
 Function: Supports preset subgenome structures, breakpoint resume, and dynamic graph constraints.
+Fixed: Sequential processing to prevent HPC NFS I/O deadlock, early import validation, and strict error handling.
 """
 
-import os, sys, subprocess, argparse, shutil, datetime, glob
-from multiprocessing import Pool
+import os
+import sys
+import subprocess
+import argparse
+import shutil
+import datetime
+import glob
+import pandas as pd  # 【修复2】提前暴露环境问题：把 pandas 移到文件头部，没有装立刻报错，绝不浪费30小时机时
 
 WORKFLOW_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(WORKFLOW_DIR)
@@ -28,8 +35,10 @@ def run_group_pipeline(args_tuple):
     g_dir = os.path.abspath(os.path.join(g_args.outdir, gid))
     os.makedirs(g_dir, exist_ok=True)
 
-    f_abs, g_abs = os.path.abspath(g_args.fasta), os.path.abspath(g_args.gff)
-    ref_f_abs, ref_g_abs = os.path.abspath(g_args.ref_cds), os.path.abspath(g_args.ref_gff)
+    f_abs = os.path.abspath(g_args.fasta)
+    g_abs = os.path.abspath(g_args.gff)
+    ref_f_abs = os.path.abspath(g_args.ref_cds)
+    ref_g_abs = os.path.abspath(g_args.ref_gff)
     og_abs = os.path.abspath(g_args.orthogroups) if g_args.orthogroups else None
 
     try:
@@ -43,6 +52,22 @@ def run_group_pipeline(args_tuple):
                 raise RuntimeError("Step 1 Failed")
         else:
             print(f"[{get_now()}] [SKIP] {gid} Step 1 Completed, automatically skip")
+
+        # ==================== Step 1.5 Intra-Group OrthoFinder ====================
+        if g_args.auto_og:
+            print(f"[{get_now()}] [{gid}] Doing Step 1.5: Intra-Group OrthoFinder...")
+            sys.path.append(PROJECT_ROOT)
+            from bin.auto_of import run_intra_group_orthofinder
+            
+            group_pep_files = glob.glob(os.path.join(s1_out, "**", "*.pep"), recursive=True)
+            group_gff_files = glob.glob(os.path.join(s1_out, "**", "*.gff*"), recursive=True)
+            
+            if not group_pep_files or not group_gff_files:
+                raise RuntimeError(f"Step 1.5 Failed: Cannot find .pep or .gff in {s1_out}")
+                
+            # 【核心护城河】：此时 g_args.threads 会把PBS申请的全部线程（如20核）毫无保留地砸给当前这唯一的 Group，极速狂飙！
+            og_abs = run_intra_group_orthofinder(group_pep_files, g_dir, gid, g_args.threads)
+        # ===============================================================================
 
         # --- Step 3: Tandem ---
         s3_out = os.path.join(g_dir, "02.tandem")
@@ -58,7 +83,6 @@ def run_group_pipeline(args_tuple):
                     with open(pf, 'rb') as r: shutil.copyfileobj(r, w_pep)
                 for gf in sorted(glob.glob(os.path.join(s1_out, "gff", "*.gff"))):
                     with open(gf, 'rb') as r: shutil.copyfileobj(r, w_gff)
-            
             
             if not run_cmd([sys.executable, os.path.join(BIN_DIR, "tandem_identify.py"), 
                             "--gff", m_gff, "--pep", m_pep, "--outdir", s3_out, "--prefix", gid,
@@ -87,8 +111,6 @@ def run_group_pipeline(args_tuple):
         s5_out = os.path.join(g_dir, "04.cluster.tsv")
         if not os.path.exists(s5_out):
             print(f"[{get_now()}] [{gid}] Doing Step 5: Graph Clustering...")
-            
-      
             if not run_cmd([sys.executable, os.path.join(BIN_DIR, "cluster.py"),
                      "--gff", m_gff, "--jcvi_dir", s4_out, "--tandem", tandem_file,
                      "--output", s5_out, "--min_chroms", str(g_args.min_c), 
@@ -136,7 +158,7 @@ def run_group_pipeline(args_tuple):
         return False
 
 def main():
-    parser = argparse.ArgumentParser(description="PolyAlleler V6.2: Graph-Constrained Standardized Allele Matrix This pipeline was developed by engineers Zhangqing-Lab, Yi-Chen, and Gengrui Zhu. We thank them for their outstanding contributions to polyploid research")
+    parser = argparse.ArgumentParser(description="PolyAlleler V6.2: Graph-Constrained Standardized Allele Matrix. Developed by engineers Zhangqing-Lab, Yi-Chen, and Gengrui Zhu. We thank them for their outstanding contributions to polyploid research.")
     parser.add_argument("-g", "--gff", required=True)
     parser.add_argument("-f", "--fasta", required=True)
     parser.add_argument("-ref_g", "--ref_gff", required=True)
@@ -158,15 +180,18 @@ def main():
     args = parser.parse_args()
     os.makedirs(args.outdir, exist_ok=True)
 
-    if args.auto_og:
-        from bin.auto_of import run_global_orthofinder 
-        args.orthogroups = run_global_orthofinder(args.gff, args.fasta, args.outdir, args.threads, args.start, args.end)
-
     task_list = [(i, args) for i in range(args.start, args.end + 1)]
-    with Pool(processes=max(1, args.threads // 4)) as pool:
-        pool.map(run_group_pipeline, task_list)
 
-    import pandas as pd
+    # 【修复1】彻底废弃 Pool 并发，改为稳如泰山的串行（Sequential）运行！
+    # 彻底杜绝超算网络硬盘（NFS）的 I/O 死锁踩踏惨案。
+    print(f"\n[{get_now()}] [INFO] Starting pipeline sequentially to protect HPC NFS I/O...")
+    for task in task_list:
+        success = run_group_pipeline(task)
+        # 【修复3】严格报错机制：一旦某一个群彻底失败，直接终止主程序，绝不带着残缺数据往后跑！
+        if not success:
+            print(f"[{get_now()}] [FATAL ERROR] Pipeline aborted due to failure in Group_Chr{task[0]:02d}.")
+            print(f"[{get_now()}] [ACTION] Please check the error logs above, fix the issue, and rerun. The script will automatically resume from this group.")
+            sys.exit(1)
 
     expected_files = []
     for i in range(args.start, args.end + 1):
@@ -174,9 +199,8 @@ def main():
         if os.path.exists(target_file):
             expected_files.append(target_file)
 
-    
     if len(expected_files) > 1:
-        print(f"\n[{get_now()}] [INFO] Testing having more than two Groups,staring Merging...")
+        print(f"\n[{get_now()}] [INFO] Testing having more than two Groups, starting Merging...")
         df_list = [pd.read_csv(f, sep='\t') for f in expected_files]
         global_df = pd.concat(df_list, ignore_index=True)
         
@@ -189,9 +213,9 @@ def main():
         print(f"[{get_now()}] [SUCCESS] Final tsv: {global_out}")
         print(f"[{get_now()}] [SUCCESS] Allele groups: {len(global_df)} 个。")
     elif len(expected_files) == 1:
-        print(f"\n[{get_now()}] [INFO] Just Single Group,skkiping merging。")
+        print(f"\n[{get_now()}] [INFO] Just Single Group, skipping merging.")
     else:
-        print(f"\n[{get_now()}] [WARNING] 未Failing to 07.FINAL_ALLELE.tsv 文件。")
+        print(f"\n[{get_now()}] [WARNING] Failed to find any 07.FINAL_ALLELE.tsv files.")
 
 if __name__ == "__main__":
     main()

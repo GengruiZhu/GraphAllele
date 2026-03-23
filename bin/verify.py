@@ -14,7 +14,7 @@ def load_og(og_file):
         og_id = row['Orthogroup']
         for genes in row[1:].dropna():
             for g in str(genes).split(','):
-                # 清洗逻辑：默认去除点号后面的转录本后缀
+                
                 clean_id = g.strip().split('.')[0]
                 og_map[clean_id] = og_id
     return og_map
@@ -33,7 +33,7 @@ def main():
     verified_rows = []
     rejected_rows = []
     
-    # --- 智能诊断探针 ---
+    
     sample_cluster_genes = []
     for _, row in df.head(5).iterrows():
         sample_cluster_genes.extend([str(row[c]).split('.')[0] for c in allele_cols if pd.notna(row[c]) and str(row[c]) != 'NA'])
@@ -56,7 +56,7 @@ def main():
                 continue
         rejected_rows.append(row)
 
-    # 防崩溃：即使 0 个验证通过，也要输出一个带表头的空表，防止下游断崖式报错
+    
     if verified_rows:
         pd.DataFrame(verified_rows).to_csv(args.output_prefix + ".tsv", sep='\t', index=False)
     else:

@@ -47,7 +47,6 @@ def split_fasta_by_chromosome(fasta_file, out_dir, target_chroms=None):
                 SeqIO.write(record, fout, "fasta")
     return chroms
 
-# 【新增核心功能】：切掉 .t1 后缀，让 FASTA ID 和 BED ID 绝对匹配！
 def clean_fasta_headers(fasta_path):
     if not os.path.exists(fasta_path): return
     records = []

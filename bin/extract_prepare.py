@@ -13,7 +13,7 @@ def main():
     
     args = parser.parse_args()
 
-    # 1. 设置变量
+    
     target_chr_prefix = "Chr%s" % args.chr
     output_prefix = os.path.join(args.outdir, "Chr%sA_to_Chr%sN" % (args.chr, args.chr))
     os.makedirs(args.outdir, exist_ok=True)

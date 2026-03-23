@@ -7,7 +7,7 @@ import sys
 
 def copy_files(src_dir, dst_dir, extensions):
     """
-    将所需的序列和位置文件搬运到 JCVI 的工作目录下
+    Moving JCVI
     """
     os.makedirs(dst_dir, exist_ok=True)
     src_dir = os.path.abspath(src_dir)
@@ -18,7 +18,7 @@ def copy_files(src_dir, dst_dir, extensions):
         if any(fname.endswith(ext) for ext in extensions):
             src = os.path.join(src_dir, fname)
             dst = os.path.join(dst_dir, fname)
-            # 使用 symlink 替代 copy2，既节省空间又防止权限问题
+            
             if os.path.exists(dst): os.remove(dst)
             os.symlink(src, dst)
             count += 1
@@ -26,13 +26,13 @@ def copy_files(src_dir, dst_dir, extensions):
 
 def run_shell_script(script_path, work_dir):
     """
-    协同核心：必须进入 work_dir 后再运行 Shell 脚本
+   
     """
     script_abs_path = os.path.abspath(script_path)
     print(f"[INFO] 正在进入工作目录: {work_dir}")
     print(f"[INFO] 准备运行 JCVI 脚本: {script_abs_path}")
     
-    # 关键：通过 cwd 参数确保 Shell 脚本在有文件的目录下运行
+    
     result = subprocess.run(["bash", script_abs_path], cwd=work_dir)
     if result.returncode != 0:
         raise Exception(f"Shell 脚本执行失败，退出码: {result.returncode}")
@@ -45,7 +45,7 @@ def collect_anchors(input_dir, output_dir):
     count = 0
     for root, _, files in os.walk(input_dir):
         for f in files:
-            # 只要原始锚点，不要 lifted 后的
+            
             if f.endswith(".anchors") and not f.endswith(".lifted.anchors"):
                 src = os.path.join(root, f)
                 dst = os.path.join(output_dir, f)
@@ -62,19 +62,15 @@ def main():
     parser.add_argument("--sh_script", required=True, help="Path to run_ortholog.sh")
     args = parser.parse_args()
 
-    # 1. 搬运原料
-    # JCVI 要求 .cds 和 .bed 在同一目录下
     copy_files(args.cds_dir, args.jcvi_input, [".cds"])
     copy_files(args.bed_dir, args.jcvi_input, [".bed"])
 
-    # 2. 运行比对 (进入工作区)
     try:
         run_shell_script(args.sh_script, args.jcvi_input)
     except Exception as e:
         print(f"[ERROR] JCVI 运行过程中发生崩溃: {e}")
         sys.exit(1)
 
-    # 3. 收割结果
     collect_anchors(args.jcvi_input, args.anchors_dir)
     print("[SUCCESS] JCVI 环节任务圆满完成。")
 
