@@ -246,7 +246,9 @@ Each row is one allele group. `NA` indicates no gene assigned for that haplotype
 ---
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+This project is licensed under a **Non-Commercial Research License**.  
+Free to use for academic and research purposes only. Commercial use is strictly prohibited.  
+See the [LICENSE](./LICENSE) file for details.
 
 ---
 
