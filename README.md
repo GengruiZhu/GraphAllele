@@ -325,5 +325,4 @@ See the [LICENSE](LICENSE) file for details.
 ## Contact
 
 - **Developers**: Gengrui Zhu, Yi Chen
-- **Lab**: Zhangqing-Lab
 - **Issues**: please use the [GitHub Issues](https://github.com/GengruiZhu/GraphAllele/issues) page for bug reports and questions.
