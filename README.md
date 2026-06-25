@@ -1,6 +1,7 @@
 # GraphAllele
 
-A graph-constrained pipeline for constructing standardized allele matrices in polyploid genomes.
+A graph-constrained pipeline for constructing standardized allele matrices in
+polyploid genomes.
 
 ---
 
@@ -22,83 +23,83 @@ A graph-constrained pipeline for constructing standardized allele matrices in po
 
 ## Overview
 
-GraphAllele integrates synteny-based graph clustering, tandem duplication filtering, orthogroup verification, and reference genome calibration into a unified, resumable pipeline for allele identification in complex polyploid genomes.
+GraphAllele integrates synteny-based graph clustering, tandem duplication
+filtering, orthogroup verification, sequence-homology expansion, and reference
+genome calibration into a unified, resumable pipeline for allele identification
+in complex polyploid genomes.
 
-**Chromosome naming convention required**: `Chr{NUM}{SUFFIX}`, e.g., `Chr1A`, `Chr1B`, ..., `Chr1K`.
+Chromosome naming convention required: `Chr{NUM}{SUFFIX}`, e.g. `Chr1A`,
+`Chr1B`, ..., `Chr1K`.
 
 ---
 
 ## Features
 
-- **Breakpoint-resumable**: each step is checkpointed and skipped automatically on re-run; if the pipeline fails at any step, simply re-run the same command and it will resume from the last incomplete step.
-- **Sequential processing**: chromosome groups are processed one by one to protect HPC NFS I/O and ensure stable, readable logging.
-- **Graph-constrained clustering**: NetworkX-based extraction of syntenic connected components with configurable distance thresholds.
-- **Tandem duplication filtering**: self-BLASTP + graph-based tandem array blacklisting with adjustable gene distance.
-- **Intra-group OrthoFinder with early termination**: OrthoFinder is run independently per chromosome group; the process is killed immediately after `Orthogroups.tsv` is written to disk, skipping the MSA and tree-building phases to reduce runtime.
-- **Reference calibration**: TBLASTN-based anchoring to an external reference genome for cross-species annotation.
-- **Standardized output**: fixed-column allele matrix (A–N subgenomes) with globally unique cluster IDs.
-- **Automated JCVI ortholog analysis**: built-in shell script for pairwise synteny comparisons with auto-discovery of species from input files.
-- **Global matrix normalization**: post-processing module that produces both a cleaned global matrix and a k-mer–formatted cluster file for downstream analysis.
+- **Breakpoint-resumable**: each step is checkpointed and skipped automatically on re-run.
+- **Sequential processing**: chromosome groups are processed one by one for stable, readable logging and to protect HPC NFS I/O.
+- **Graph-constrained clustering**: NetworkX-based extraction of syntenic connected components, with an intra-chromosomal gene-distance constraint.
+- **Tandem duplication filtering**: self-BLASTP plus graph-based tandem-array blacklisting.
+- **Intra-group OrthoFinder with early termination (Tactical Sniper)**: OrthoFinder is run independently per chromosome group; once `Orthogroups.tsv` is confirmed on disk, the result is backed up and the process group is shut down (SIGTERM, then SIGKILL after a short grace period), skipping the MSA and tree-building phases to save time.
+- **Sequence-homology expansion**: BLASTP recovers high-identity unclustered paralogs/translocated copies into the matrix.
+- **Smart Subgenome Backfilling**: salvaged genes whose IDs carry a subgenome signature are routed back into the correct allele column; only truly unplaceable genes land in the catch-all column.
+- **Reference calibration**: TBLASTN-based anchoring to an external reference genome, annotating each cluster with `Ref_Gene` and `Ref_Locus`.
+- **Standardized output**: fixed-column allele matrix with globally unique cluster IDs.
 
 ---
 
 ## Pipeline Architecture
 
 ```
-Input: Whole-genome GFF3 + FASTA + Reference CDS/GFF + Orthogroups.tsv (or --auto_og)
+Input: whole-genome GFF3 + FASTA + reference CDS/GFF
+       (+ Orthogroups.tsv, or --auto_og)
          |
          v
-  Step 1: Prepare Data (01.prepare/)
+  Step 1: Prepare Data
           Split GFF/FASTA by chromosome group
           Extract CDS, PEP, BED per haplotype (gffread)
          |
          v
-  Step 1.5 (optional): Intra-Group OrthoFinder (--auto_og)
-          Run OrthoFinder per chromosome group
-          Early termination after Orthogroups.tsv is written
+  Step 1.5: Intra-Group OrthoFinder        (only with --auto_og)
+          Per-group OrthoFinder + Tactical Sniper early termination
          |
          v
-  Step 2: Tandem Duplication Identification (02.tandem/)
+  Step 2: Tandem Duplication Identification
           Self-BLASTP on merged PEP
-          Graph-based tandem array detection (--tandem_dist)
+          Graph-based tandem-array detection (max_dist, min_identity)
          |
          v
-  Step 3: JCVI Synteny Analysis (03.jcvi/)
-          Pairwise LAST alignment via run_ortholog.sh
-          MCScan anchor generation (.anchors files)
+  Step 3: JCVI Synteny Analysis
+          Pairwise LAST alignment + MCScan anchors (.anchors)
          |
          v
-  Step 4: Graph Clustering (04.cluster.tsv)
-          Build synteny graph from .anchors
-          Filter tandem blacklist
-          Extract connected components as candidate allele clusters
+  Step 4: Graph Clustering
+          Build synteny graph from .anchors, drop tandem blacklist,
+          extract connected components as candidate allele clusters
          |
          v
-  Step 5: OrthoGroup Verification (05.verified.tsv)
-          Validate clusters against OrthoFinder orthogroups
-          Output verified and rejected tables separately
+  Step 5: OrthoGroup Verification
+          Validate clusters against OrthoFinder orthogroups,
+          rescue same-OG members; write verified + rejected tables
          |
          v
-  Step 6: Sequence Homology Expansion (06.expanded/)
-          BLASTP-based refinement of allele assignments
+  Step 6: Sequence Homology Expansion
+          BLASTP recovery of high-identity unclustered genes
          |
          v
-  Step 7: Reference Calibration (07.FINAL_ALLELE.tsv)
-          TBLASTN anchoring to reference CDS
-          Annotate each cluster with Ref_Gene and Ref_Locus
+  Step 7: Reference Calibration
+          TBLASTN anchoring to reference CDS; annotate Ref_Gene / Ref_Locus
          |
          v
-  Post-processing: Global Merge & Normalization
-          Merge all chromosome groups into PolyAlleler_Global_Matrix.tsv
-          Normalize into PolyAlleler_Global_Matrix_Cleaned.tsv (fixed A–N columns)
-          Generate my_clusters.tsv (k-mer format)
+Output: per-group 07.FINAL_ALLELE.tsv
+        PolyAlleler_Global_Matrix_Cleaned_<paramtag>.tsv   (genome-wide merged)
+        my_clusters_<paramtag>.tsv                          (flat gene list)
 ```
 
 ---
 
 ## Installation
 
-### Conda (Recommended)
+### Conda (recommended)
 
 ```bash
 git clone https://github.com/GengruiZhu/GraphAllele.git
@@ -108,7 +109,7 @@ conda env create -f environment.yml
 conda activate polyalleler
 ```
 
-### Manual Installation
+### Manual installation
 
 See [INSTALL.md](INSTALL.md) for step-by-step instructions.
 
@@ -116,213 +117,189 @@ See [INSTALL.md](INSTALL.md) for step-by-step instructions.
 
 ## Quick Start
 
-### Basic run with a pre-computed Orthogroups file
+Edit the `USER CONFIGURATION` block at the top of `workflow/run_GraphAllele.sh`
+to point at your data, then run it directly:
+
+```bash
+cd GraphAllele/workflow
+bash run_GraphAllele.sh
+```
+
+Or call the pipeline directly:
 
 ```bash
 cd GraphAllele/workflow
 
 python GraphAllele.py \
-  -g /path/to/genome.gff3 \
-  -f /path/to/genome.fasta \
-  -ref_g /path/to/reference.gff3 \
-  -ref_f /path/to/reference.cds \
-  -og /path/to/Orthogroups.tsv \
-  -s 1 -e 5 \
-  -t 20 \
-  --sub_list A,B,C,D,E
-```
-
-### Run with automatic OrthoFinder (no pre-computed file needed)
-
-```bash
-python GraphAllele.py \
-  -g /path/to/genome.gff3 \
-  -f /path/to/genome.fasta \
-  -ref_g /path/to/reference.gff3 \
-  -ref_f /path/to/reference.cds \
+  -g ../data/genome.gff3 \
+  -f ../data/genome.fasta \
+  -ref_g ../data/reference.gff3 \
+  -ref_f ../data/reference.cds \
   --auto_og \
   -s 1 -e 10 \
-  -t 30 \
-  --min_c 2 \
-  --cluster_dist 100 \
-  --sub_list A,B,C,D,E,F,G,H,I,J,K,L,M,N
+  -t 12 \
+  --sub_list A,B,C,D,E,F,G,H,I,J,K \
+  --min_c 3 \
+  --cluster_dist 30 \
+  --verify_ratio 0.35 \
+  -o result/GraphAllele_out
 ```
 
-### PBS Job Submission
+### Running on an HPC scheduler
 
-```bash
-# Edit workflow/run_GraphAllele.sh to set your paths and resource requirements, then:
-qsub workflow/run_GraphAllele.sh
-```
-
-**Example PBS script** (`workflow/run_GraphAllele.sh`):
-
-```bash
-#!/bin/bash
-#PBS -N GraphAllele_ZG
-#PBS -l nodes=1:ppn=30
-#PBS -q comput
-#PBS -l mem=
-#PBS -o Allele.log
-#PBS -j oe
-
-cd $PBS_O_WORKDIR
-date -R
-source ~/miniconda3/bin/activate
-source activate polyalleler
-
-python GraphAllele.py \
-  -g ../data/ZG.gff3 \
-  -f ../data/ZG.fasta \
-  -ref_g ../data/Eru.gff3 \
-  -ref_f ../data/Eru.cds \
-  --auto_og \
-  -s 1 -e 10 \
-  -t 30 \
-  -o ZG_100 \
-  --min_c 2 \
-  --cluster_dist 100 \
-  --sub_list A,B,C,D,E,F,G,H,I,J,K,L,M,N
-```
+`run_GraphAllele.sh` is a plain shell script with no scheduler directives. To
+submit it, wrap it in your scheduler's job script — e.g. prepend `#PBS` /
+`#SBATCH` resource lines and submit with `qsub` / `sbatch`. Keep the configured
+`THREADS` consistent with the cores you request.
 
 ---
 
 ## Usage
 
-```
+```bash
 python GraphAllele.py [OPTIONS]
 ```
 
-### Required Arguments
+### Required arguments
 
 | Argument | Description |
-|---|---|
-| `-g / --gff` | Whole-genome GFF3 annotation file. Must use `Chr{NUM}{SUFFIX}` naming convention. |
-| `-f / --fasta` | Whole-genome FASTA sequence file corresponding to the GFF3. |
-| `-ref_g / --ref_gff` | Reference genome GFF3 annotation (used for calibration in Step 7). |
-| `-ref_f / --ref_cds` | Reference genome CDS FASTA (used for TBLASTN in Step 7). |
+| --- | --- |
+| `-g / --gff` | Whole-genome GFF3 annotation file |
+| `-f / --fasta` | Whole-genome FASTA sequence file |
+| `-ref_g / --ref_gff` | Reference genome GFF3 (for calibration) |
+| `-ref_f / --ref_cds` | Reference genome CDS FASTA (for TBLASTN) |
 
-### Optional Arguments
+### Orthogroups (supply one)
 
 | Argument | Default | Description |
-|---|---|---|
-| `-og / --orthogroups` | `None` | Path to a pre-computed OrthoFinder `Orthogroups.tsv`. If provided, the pipeline uses this file for orthogroup verification (Step 5). Mutually exclusive in spirit with `--auto_og`, though both can be set (pre-computed file takes priority if the auto-generated one does not exist). |
-| `--auto_og` | `False` | Run OrthoFinder automatically per chromosome group using only the haplotype PEP files for that group. The OrthoFinder process is terminated immediately after `Orthogroups.tsv` is written, skipping MSA and tree-building. Recommended when no pre-computed orthogroups are available. |
-| `-s / --start` | `1` | Start chromosome group number. For example, `-s 1` means beginning from `Group_Chr01`. |
-| `-e / --end` | `10` | End chromosome group number. For example, `-e 10` means processing through `Group_Chr10`. |
-| `-t / --threads` | `10` | Total CPU threads available. Used by BLAST, OrthoFinder, and other parallelizable steps. |
-| `-o / --outdir` | `standardized_results` | Output directory. All intermediate and final results are stored here. |
-| `--sub_list` | `A,B,...,N` | Comma-separated haplotype suffix list. Defines the column order in the output allele matrix. Must match the suffix letters in your chromosome names. |
-| `--min_c` | `3` | Minimum number of distinct haplotype chromosomes a cluster must span to be retained. Lower values (e.g., 2) are more permissive and suitable for genomes with high gene loss. |
-| `--tandem_dist` | `5` | Maximum gene index distance for tandem duplicate detection (MCScanX convention). Two genes within this distance on the same chromosome with high sequence similarity are flagged as tandem duplicates. |
-| `--cluster_dist` | `30` | Maximum gene index distance for synteny graph clustering. Increasing this value (e.g., to 100) allows more distant syntenic gene pairs to be grouped together, which can be useful for genomes with many structural rearrangements. |
+| --- | --- | --- |
+| `-og / --orthogroups` | None | Pre-computed OrthoFinder `Orthogroups.tsv` |
+| `--auto_og` | off | Run OrthoFinder automatically per chromosome group |
 
-### Parameter Guidance
+One of `-og` or `--auto_og` is required.
 
-- **`--sub_list`**: must exactly match the suffix letters used in your chromosome names. For example, if your chromosomes are named `Chr1A` through `Chr1K`, use `--sub_list A,B,C,D,E,F,G,H,I,J,K`. The order of suffixes determines column order in the output matrix.
-- **`--min_c`**: a cluster must span at least this many distinct haplotype chromosomes to be retained. For highly fragmented or recently diverged polyploids, consider lowering to `2`.
-- **`--auto_og`**: when enabled, OrthoFinder is run once per chromosome group using only the haplotype PEP files for that group. The process is terminated automatically after `Orthogroups.tsv` is written, before MSA and tree steps. It is still recommended to supply a pre-computed `-og` file when one is available, as it tends to be more comprehensive.
-- **`--cluster_dist`**: the default value of `30` works well for most plant genomes. For genomes with extensive rearrangements (e.g., sugarcane), values of `50–100` may produce better results.
-- **`--tandem_dist`**: the default of `5` follows the MCScanX convention. Increase to `10` if you suspect many dispersed tandem arrays are being missed.
+### Optional arguments
+
+| Argument | Default | Description |
+| --- | --- | --- |
+| `-s / --start` | 1 | Start chromosome group number |
+| `-e / --end` | 10 | End chromosome group number |
+| `-t / --threads` | 10 | CPU threads |
+| `-o / --outdir` | `standardized_results` | Output directory |
+| `--sub_list` | `A,B,...,N` | Comma-separated haplotype suffix list |
+| `--min_c` | 3 | Minimum haplotypes required per allele cluster |
+| `--tandem_dist` | 5 | Max gene-index distance for tandem detection |
+| `--cluster_dist` | 30 | Max gene-index distance for synteny clustering |
+| `--verify_ratio` | 0.35 | Minimum OrthoGroup support ratio for cluster verification |
+
+### Notes
+
+**`--sub_list`** must match the suffix letters used in your chromosome names.
+For example, if your chromosomes are named `Chr1A` through `Chr1K`, use
+`--sub_list A,B,C,D,E,F,G,H,I,J,K`.
+
+**`--min_c`**: a cluster must span at least this many distinct haplotype
+chromosomes to be retained.
+
+**`--verify_ratio`**: within a candidate cluster, the fraction of genes sharing
+the dominant orthogroup must reach this value for the cluster to be verified.
+Lower values are more permissive.
+
+**`--auto_og`**: when enabled, OrthoFinder runs once per chromosome group using
+only that group's haplotype PEP files, and is terminated automatically once
+`Orthogroups.tsv` is written (before MSA and tree steps). Supplying a
+pre-computed `-og` file is still recommended when one is available.
 
 ---
 
 ## Output Description
 
 ```
-standardized_results/
+<outdir>/
 ├── Group_Chr01/
-│   ├── 01.prepare/                    # Per-haplotype GFF, FASTA, CDS, BED, PEP
-│   ├── 01.5.OrthoFinder_Intra/        # Intra-group OrthoFinder results (--auto_og only)
-│   ├── 02.tandem/                     # Merged GFF/PEP + tandem blacklist
-│   ├── 03.jcvi/                       # Pairwise .anchors files
-│   ├── 04.cluster.tsv                 # Raw synteny clusters
-│   ├── 05.verified.tsv                # OrthoGroup-validated clusters
-│   ├── 05.verified_rejected.tsv       # Clusters failing OG verification
-│   ├── 06.expanded_expanded.tsv       # BLAST-refined allele table
-│   └── 07.FINAL_ALLELE.tsv            # Final allele matrix with reference anchors
+│   ├── 01.prepare/               # Per-haplotype GFF, FASTA, CDS, BED, PEP
+│   ├── 01.5.OrthoFinder_Intra/   # Intra-group OrthoFinder results (--auto_og only)
+│   ├── 02.tandem/                # Merged GFF/PEP + tandem blacklist
+│   ├── 03.jcvi/                  # Pairwise .anchors files
+│   ├── 04.cluster.tsv            # Raw synteny clusters
+│   ├── 05.verified.tsv           # OrthoGroup-validated clusters
+│   ├── 05.verified_rejected.tsv  # Clusters failing OG verification
+│   ├── 06.expanded_expanded.tsv  # BLAST-refined allele table
+│   └── 07.FINAL_ALLELE.tsv       # Per-group allele matrix with reference anchors
 ├── Group_Chr02/
 │   └── ...
-├── PolyAlleler_Global_Matrix.tsv       # Genome-wide merged allele matrix (raw)
-├── PolyAlleler_Global_Matrix_Cleaned.tsv  # Normalized matrix with fixed A–N columns
-└── my_clusters.tsv                     # K-mer format cluster file
+├── PolyAlleler_Global_Matrix_Cleaned_<paramtag>.tsv   # Genome-wide merged matrix
+└── my_clusters_<paramtag>.tsv                          # Flat per-cluster gene list
 ```
 
-### `07.FINAL_ALLELE.tsv` column format
+`<paramtag>` encodes the run parameters, e.g. `minc3_dist30_ratio0.35`.
 
-| ClusterID | Ref_Gene | Ref_Locus | Chr01A | Chr01B | ... |
-|---|---|---|---|---|---|
-| Global_Cluster_000001 | Gene001 | Chr1:1000-5000(+) | gene_A | gene_B | ... |
+### Per-group `07.FINAL_ALLELE.tsv`
 
-Each row is one allele group. `-` or `NA` indicates no gene assigned for that haplotype in this cluster.
+Columns: `ClusterID`, `Ref_Gene`, `Ref_Locus`, then one column per haplotype
+named `Chr{NN}{SUFFIX}` (e.g. `Chr01A`, `Chr01B`, ...), plus
+`Unplaced_or_Translocated`.
 
-### `PolyAlleler_Global_Matrix_Cleaned.tsv`
+| ClusterID | Ref_Gene | Ref_Locus | Chr01A | Chr01B | ... | Unplaced_or_Translocated |
+| --- | --- | --- | --- | --- | --- | --- |
+| Cluster_01_00001 | Gene001 | Chr1:1000-5000(+) | gene_A | gene_B | ... | NA |
 
-A post-processed version of the global matrix with standardized columns (`Allele_A` through `Allele_N`) and globally re-numbered cluster IDs, produced by the normalization module.
+### Genome-wide `PolyAlleler_Global_Matrix_Cleaned_<paramtag>.tsv`
 
-### `my_clusters.tsv`
+Columns: `ClusterID`, `Ref_Gene`, `Ref_Locus`, one `Allele_<SUFFIX>` column per
+subgenome (e.g. `Allele_A`, `Allele_B`, ...), plus a final `Salvaged_Genes`
+catch-all column for genes that could not be placed into a subgenome.
 
-A two-column file: `ClusterID` and a comma-separated list of all gene members in that cluster. Useful for downstream k-mer or expression analyses.
+| ClusterID | Ref_Gene | Ref_Locus | Allele_A | Allele_B | ... | Salvaged_Genes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Global_Cluster_000001 | Gene001 | Chr1:1000-5000(+) | gene_A | gene_B | ... | NA |
+
+`my_clusters_<paramtag>.tsv` is a two-column flat list: `ClusterID` and a
+comma-separated list of all genes in that cluster. `NA` indicates no gene
+assigned for that haplotype/subgenome in a cluster.
 
 ---
 
 ## Dependencies
 
-### Python Packages
+### Python packages
 
 | Package | Version |
-|---|---|
+| --- | --- |
 | Python | >= 3.8 |
 | Biopython | >= 1.79 |
 | pandas | >= 1.3 |
 | networkx | >= 2.6 |
 
-### External Tools
+### External tools
 
 | Tool | Purpose |
-|---|---|
-| [BLAST+](https://blast.ncbi.nlm.nih.gov/doc/blast-help/downloadblastdata.html) | Sequence similarity search (BLASTP, TBLASTN, makeblastdb) |
-| [gffread](https://github.com/gpertea/gffread) | CDS/protein extraction from GFF |
-| [JCVI/MCScan](https://github.com/tanghaibao/jcvi) | Synteny analysis |
-| [LAST](https://gitlab.com/mcfrith/last) | Pairwise sequence alignment |
-| [OrthoFinder](https://github.com/davidemms/OrthoFinder) *(optional)* | Orthogroup inference (required if using `--auto_og`) |
+| --- | --- |
+| BLAST+ | Sequence similarity search (makeblastdb, blastp, tblastn) |
+| gffread | CDS/protein extraction from GFF |
+| JCVI / MCScan | Synteny analysis |
+| LAST | Pairwise sequence alignment (used by JCVI) |
+| OrthoFinder *(optional)* | Orthogroup inference, required only for `--auto_og` |
 
 ---
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for a detailed version history.
-
-### v1.1 (2025-04-02)
-
-- Added automated JCVI ortholog shell script (`bin/run_ortholog.sh`) with species auto-discovery
-- Added global matrix normalization module (`generate_clean_clusters_auto`) producing cleaned matrix and k-mer cluster file
-- Improved global merge logic using pandas with re-numbered ClusterIDs
-- Added `--protein` flag to `prepare_jcvi.py` for protein sequence extraction
-- Enhanced error handling with `[FATAL ERROR]` / `[ACTION]` messages and resume guidance
-- Updated PBS example script with real-world parameters
-
-### v1.0
-
-- Initial release
-
----
-
-## Citation
-
-> Manuscript in preparation. Citation will be added upon publication.
+See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ---
 
 ## License
 
-This project is licensed under a **Non-Commercial Research License**.
-Free to use for academic and research purposes only. Commercial use is strictly prohibited.
-See the [LICENSE](LICENSE) file for details.
+This project is licensed under a **Non-Commercial Research License**. It is free
+to use for academic and non-profit research purposes only; commercial use
+requires a separate written agreement. See the [LICENSE](LICENSE) file for the
+full text.
 
 ---
 
 ## Contact
 
 - **Developers**: Gengrui Zhu, Yi Chen
-- **Issues**: please use the [GitHub Issues](https://github.com/GengruiZhu/GraphAllele/issues) page for bug reports and questions.
+- **Commercial licensing**: gengruizhu@outlook.com, cy150868@163.com
+- **Issues**: please use the GitHub Issues page for bug reports and questions.

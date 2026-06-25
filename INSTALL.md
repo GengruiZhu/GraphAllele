@@ -1,376 +1,90 @@
-\# Installation Guide
+# Installation
 
+GraphAllele is a Python pipeline that orchestrates several external
+bioinformatics tools. The recommended way to install everything is via Conda.
 
+---
 
-This document provides detailed installation instructions for GraphAllele and all its dependencies.
-
-
-
-\---
-
-
-
-\## System Requirements
-
-
-
-| Component | Minimum | Recommended |
-
-|---|---|---|
-
-| OS | Linux (any major distro) | CentOS 7 / Ubuntu 20.04+ |
-
-| CPU | 4 cores | 20+ cores |
-
-| RAM | 32 GB | 128 GB+ (for large polyploid genomes) |
-
-| Disk | 100 GB free | 500 GB+ |
-
-| Python | 3.8 | 3.9 or 3.10 |
-
-| Conda | Any | Miniconda3 or Anaconda3 |
-
-
-
-> \*\*Note\*\*: For highly polyploid genomes (e.g., sugarcane with 100+ chromosomes), RAM usage can exceed 64 GB during tandem identification and BLAST steps. High-memory compute nodes are strongly recommended.
-
-
-
-\---
-
-
-
-\## Step 1: Install Conda (if not already installed)
-
-
+## 1. Conda (recommended)
 
 ```bash
-
-\# Download Miniconda3 installer
-
-wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86\_64.sh
-
-
-
-\# Run the installer
-
-bash Miniconda3-latest-Linux-x86\_64.sh
-
-
-
-\# Reload shell
-
-source \~/.bashrc
-
-```
-
-
-
-\---
-
-
-
-\## Step 2: Clone GraphAllele
-
-
-
-```bash
-
 git clone https://github.com/GengruiZhu/GraphAllele.git
-
 cd GraphAllele
 
-```
-
-
-
-\---
-
-
-
-\## Step 3: Create the Conda Environment
-
-
-
-\### Option A: Use the provided environment file (Recommended)
-
-
-
-```bash
-
 conda env create -f environment.yml
-
 conda activate polyalleler
-
 ```
 
+This creates an environment named `polyalleler` containing Python and all
+required packages and external tools (BLAST+, gffread, JCVI, LAST, and
+OrthoFinder).
 
-
-\### Option B: Manual step-by-step creation
-
-
-
-```bash
-
-\# Create environment
-
-conda create -n polyalleler python=3.9 -y
-
-conda activate polyalleler
-
-
-
-\# Install Python packages
-
-pip install biopython pandas networkx
-
-
-
-\# Install bioinformatics tools via bioconda
-
-conda install -c bioconda -c conda-forge blast gffread last jcvi -y
-
-
-
-\# Optional: OrthoFinder (only needed if using --auto\_og)
-
-conda install -c bioconda orthofinder -y
-
-```
-
-
-
-\---
-
-
-
-\## Step 4: Verify Installation
-
-
-
-Run the following to confirm all dependencies are available:
-
-
+Verify the key tools are visible:
 
 ```bash
-
-\# Activate environment first
-
-conda activate polyalleler
-
-
-
-\# Check Python packages
-
-python -c "from Bio import SeqIO; import pandas; import networkx; print('Python packages: OK')"
-
-
-
-\# Check external tools
-
-blastp -version
-
+python   --version
 makeblastdb -version
-
-tblastn -version
-
-gffread --version
-
-python -m jcvi.compara.catalog --help 2>\&1 | head -3
-
+blastp   -version
+tblastn  -version
+gffread  --version
+python -m jcvi.compara.catalog --help   >/dev/null && echo "jcvi OK"
+orthofinder -h | head -n 1               # only needed for --auto_og
 ```
 
+---
 
+## 2. Manual installation
 
-If all commands print version info without errors, installation is complete.
+If you prefer not to use the provided environment file, install the
+dependencies yourself.
 
+### 2.1 Python packages
 
-
-\---
-
-
-
-\## Step 5: Test with Example Data (Optional)
-
-
+Python >= 3.8 with:
 
 ```bash
+pip install "biopython>=1.79" "pandas>=1.3" "networkx>=2.6"
+```
 
+### 2.2 External tools
+
+Install these and make sure they are on your `PATH`:
+
+| Tool | Notes |
+| --- | --- |
+| BLAST+ (>= 2.12) | provides `makeblastdb`, `blastp`, `tblastn` |
+| gffread | CDS / protein extraction from GFF3 |
+| LAST | pairwise aligner used by JCVI/MCScan |
+| JCVI | `pip install jcvi` (requires LAST on PATH) |
+| OrthoFinder | optional; only needed when running with `--auto_og` |
+
+The fastest route for the external tools is still Bioconda:
+
+```bash
+conda install -c conda-forge -c bioconda blast last gffread jcvi orthofinder
+```
+
+---
+
+## 3. Test the installation
+
+```bash
 cd GraphAllele/workflow
-
-
-
-\# Test run with provided example data (Chr5 only)
-
-python GraphAllele.py \\
-
-&#x20; -g ../data/ROC22.gff3 \\
-
-&#x20; -f ../data/ROC22.fasta \\
-
-&#x20; -ref\_g ../data/Eru.gff3 \\
-
-&#x20; -ref\_f ../data/Eru.cds \\
-
-&#x20; -og ./Orthogroups.tsv \\
-
-&#x20; -s 5 -e 5 \\
-
-&#x20; -t 4 \\
-
-&#x20; --sub\_list A,B,C,D,E
-
+python GraphAllele.py --help
 ```
 
-
-
-\---
-
-
-
-\## Troubleshooting
-
-
-
-\### `ModuleNotFoundError: No module named 'Bio'`
-
-
-
-```bash
-
-conda activate polyalleler
-
-pip install biopython
-
-```
-
-
-
-\### `blastp: command not found`
-
-
-
-```bash
-
-conda activate polyalleler
-
-conda install -c bioconda blast -y
-
-```
-
-
-
-\### `gffread: command not found`
-
-
-
-```bash
-
-conda activate polyalleler
-
-conda install -c bioconda gffread -y
-
-```
-
-
-
-\### JCVI/MCScan errors during Step 3
-
-
-
-Ensure you are running from within the correct working directory. GraphAllele handles this automatically via `cwd=` in subprocess calls. If issues persist, check that `.cds` and `.bed` files are correctly linked in the `03.jcvi/` subdirectory.
-
-
-
-\### OrthoFinder not found (when using `--auto\_og`)
-
-
-
-```bash
-
-conda activate polyalleler
-
-conda install -c bioconda orthofinder -y
-
-```
-
-
-
-\---
-
-
-
-\## PBS Job Submission
-
-
-
-Edit `workflow/run\_GraphAllele.sh` to set the correct `mem=` and `ppn=` values for your cluster:
-
-
-
-```bash
-
-\#PBS -l nodes=1:ppn=20
-
-\#PBS -l mem=128gb
-
-```
-
-
-
-\---
-
-
-
-\## HPC / Cluster Notes
-
-
-
-\- The pipeline processes chromosome groups \*\*sequentially\*\* (one by one) to protect HPC NFS I/O and ensure stable logging. Set `-t` to the number of threads available per node.
-
-\- For PBS clusters, submit via `qsub workflow/run\_GraphAllele.sh`.
-
-\- For SLURM clusters, adapt the job header accordingly:
-
-
-
-```bash
-
-\#!/bin/bash
-
-\#SBATCH -J GraphAllele
-
-\#SBATCH -n 20
-
-\#SBATCH --mem=128G
-
-\#SBATCH -o Allele.log
-
-
-
-source activate polyalleler
-
-cd /path/to/GraphAllele/workflow
-
-
-
-python GraphAllele.py \\
-
-&#x20; -g ../data/genome.gff3 \\
-
-&#x20; -f ../data/genome.fasta \\
-
-&#x20; -ref\_g ../data/reference.gff3 \\
-
-&#x20; -ref\_f ../data/reference.cds \\
-
-&#x20; --auto\_og \\
-
-&#x20; -s 1 -e 10 \\
-
-&#x20; -t 20 \\
-
-&#x20; --sub\_list A,B,C,D,E,F,G,H,I,J,K,L,M,N
-
-```
-
+If the help text prints without import errors, the Python side is ready. Then
+edit `run_GraphAllele.sh` (or pass arguments directly) to point at your data
+and launch a run. See the [README](README.md) for usage details.
+
+---
+
+## 4. Notes
+
+- The pipeline writes BLAST databases into temporary sandboxes, so it does not
+  pollute your reference data directory.
+- Each step is checkpointed; re-running the same command resumes from where it
+  stopped rather than restarting from scratch.
+- `run_GraphAllele.sh` activates the `polyalleler` environment automatically via
+  `conda info --base` (falling back to `$HOME/miniconda3` or `$HOME/anaconda3`),
+  so it contains no hardcoded, account-specific paths.

@@ -5,7 +5,7 @@ Copyright (c) 2026 Yi Chen and Gengrui Zhu
 All rights reserved.
 
 -------------------------------------------------------------------------------
-                                    Preamble
+Preamble
 -------------------------------------------------------------------------------
 
 This license governs the use, reproduction, modification, and distribution of
@@ -19,7 +19,7 @@ without restriction beyond the conditions below. Any commercial use requires a
 separate written agreement with the copyright holders.
 
 -------------------------------------------------------------------------------
-                                  Definitions
+Definitions
 -------------------------------------------------------------------------------
 
 "Academic and Non-Profit Use" refers to use carried out by accredited
@@ -46,21 +46,21 @@ purposes only.
 
 The following conditions apply:
 
-  (a) The Software, or any portion thereof, shall not be used for any
-      Commercial Use without prior written authorization from the copyright
-      holders.
+(a) The Software, or any portion thereof, shall not be used for any
+Commercial Use without prior written authorization from the copyright
+holders.
 
-  (b) Any redistribution of the Software, whether in original or modified
-      form, must include this license document in its entirety and preserve
-      the copyright notice above.
+(b) Any redistribution of the Software, whether in original or modified
+form, must include this license document in its entirety and preserve
+the copyright notice above.
 
-  (c) Commercial entities seeking to use the Software must obtain a separate
-      commercial license prior to any such use.
+(c) Commercial entities seeking to use the Software must obtain a separate
+commercial license prior to any such use.
 
 For commercial licensing inquiries, please contact:
 
-  Gengrui Zhu  —  gengruizhu@outlook.com
-  Yi Chen      —  cy150868@163.com
+Gengrui Zhu — gengruizhu@outlook.com
+Yi Chen — cy150868@163.com
 
 -------------------------------------------------------------------------------
 2. Disclaimer of Warranty
@@ -98,6 +98,6 @@ other parties.
 5. Summary
 -------------------------------------------------------------------------------
 
-  - Free to use for academic and non-profit research
-  - Commercial use requires a separate license agreement
-  - Provided without warranty or liability of any kind
+- Free to use for academic and non-profit research
+- Commercial use requires a separate license agreement
+- Provided without warranty or liability of any kind

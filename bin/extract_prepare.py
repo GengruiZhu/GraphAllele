@@ -1,87 +1,90 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 import os
+import sys
 import subprocess
 import argparse
-
-def clean_and_rescue_fasta(fasta_file):
-    """
-    """
-    if not os.path.exists(fasta_file):
-        return
-        
-    temp_file = fasta_file + ".tmp"
-    with open(fasta_file, 'r') as fin, open(temp_file, 'w') as fout:
-        for line in fin:
-            if line.startswith('>'):
-                parts = line.strip().split()
-                if len(parts) > 1:
-                    real_id = parts[1]
-                else:
-                    real_id = line[1:].strip()
-                
-                safe_id = real_id.replace("SoZg.", "SoZg_")
-                fout.write(f">{safe_id}\n")
-            else:
-                clean_seq = line.strip().replace('.', '').replace('*', '')
-                if clean_seq:
-                    fout.write(clean_seq + "\n")
-                    
-    os.replace(temp_file, fasta_file)
-    print(f"  -> [+] Data cleaned: {os.path.basename(fasta_file)}")
-
+import shutil
 
 def main():
-    parser = argparse.ArgumentParser(description="Extract GFF,CDS and PEP ")
-    parser.add_argument("--gff", required=True, help="GFF3")
-    parser.add_argument("--fasta", required=True, help="FASTA")
-    parser.add_argument("--chr", required=True, help="(Number,like 1)")
-    parser.add_argument("--outdir", required=True, help="output")
-    parser.add_argument("--gffread", default="gffread", help="gffread")
-    
+    parser = argparse.ArgumentParser(description="Extract chromosome-specific GFF and CDS for polyploids")
+    parser.add_argument("--gff", required=True, help="Path to whole-genome GFF3")
+    parser.add_argument("--fasta", required=True, help="Path to whole-genome FASTA")
+    parser.add_argument("--chr", required=True, help="Target chromosome group number (e.g., 1)")
+    parser.add_argument("--outdir", required=True, help="Output directory")
+    parser.add_argument("--gffread", default="gffread", help="Path to gffread executable")
+    # Added the sub_list argument to synchronize with the master script
+    parser.add_argument("--sub_list", default="A,B,C,D,E,F,G,H,I,J,K,L,M,N",
+                        help="Comma-separated list of subgenome suffixes (e.g., A,B,D or At,Dt)")
+
     args = parser.parse_args()
 
-    target_chr_prefix = "Chr%s" % args.chr
-    output_prefix = os.path.join(args.outdir, "Chr%sA_to_Chr%sN" % (args.chr, args.chr))
-    os.makedirs(args.outdir, exist_ok=True)
+    # Step 1: Pre-flight checks for I/O and dependencies
+    if not os.path.exists(args.gff):
+        print(f"[ERROR] GFF file not found: {args.gff}")
+        sys.exit(1)
 
-    target_chroms = [f"{target_chr_prefix}{c}" for c in "ABCDEFGHIJKLMN"]
+    if not os.path.exists(args.fasta):
+        print(f"[ERROR] FASTA file not found: {args.fasta}")
+        sys.exit(1)
+
+    if shutil.which(args.gffread) is None:
+        print(f"[ERROR] gffread executable not found in PATH or specified path: {args.gffread}")
+        sys.exit(1)
+
+    os.makedirs(args.outdir, exist_ok=True)
+    output_prefix = os.path.join(args.outdir, f"Group_Chr{args.chr}")
+
+    # Step 2: Dynamic subgenome parsing based on user input
+    subgenomes = [sg.strip() for sg in args.sub_list.split(',') if sg.strip()]
+    target_chroms = set([f"Chr{args.chr}{sg}" for sg in subgenomes])
 
     filtered_gff = f"{output_prefix}.gff3"
-    print(f"[i] Already {args.gff} extracting Chr{args.chr}...")
-    
-    with open(args.gff, "r") as fin, open(filtered_gff, "w") as fout:
+    print(f"[INFO] Extracting homologous group Chr{args.chr} from {args.gff}...")
+    print(f"[INFO] Target chromosomes identified: {', '.join(target_chroms)}")
+
+    # Step 3: Extract GFF with newline fix
+    extracted_count = 0
+    with open(args.gff, "r", encoding="utf-8") as fin, open(filtered_gff, "w", encoding="utf-8") as fout:
         for line in fin:
+            # Preserve header lines
             if line.startswith("#"):
                 fout.write(line)
                 continue
-            parts = line.strip().split("\t")
+
+            parts = line.split("\t")
+            # parts[0] is the seqid (chromosome name)
             if len(parts) >= 9 and parts[0] in target_chroms:
-                fout.write(line + "\n")
+                # FIX: 'line' from iterators already contains the trailing newline (\n)
+                # Writing line + "\n" would create empty lines that break strict GFF parsers
+                fout.write(line)
+                extracted_count += 1
 
-    print(f"GFF Extracting completely:{filtered_gff}")
+    print(f"[INFO] GFF extraction complete: {filtered_gff} ({extracted_count} records extracted)")
 
+    if extracted_count == 0:
+        print("[WARNING] No records found for the target chromosomes. Check your --sub_list or FASTA sequence naming format.")
+
+    # Step 4: Extract CDS using gffread
     cds_output = f"{output_prefix}.cds.fasta"
-    pep_output = f"{output_prefix}.pep"
-    
     cmd = [
         args.gffread,
         filtered_gff,
         "-g", args.fasta,
-        "-x", cds_output,
-        "-y", pep_output
+        "-x", cds_output
     ]
 
-    print("[i] Beginning gffread extracting CDS and PEP ...")
+    print("[INFO] Running gffread to extract CDS sequences...")
     result = subprocess.run(cmd, capture_output=True, text=True)
 
+    # Step 5: Validate gffread execution
     if result.returncode == 0:
-        print(f"[√] Successuly")
-        clean_and_rescue_fasta(cds_output)
-        clean_and_rescue_fasta(pep_output)
-        print("[√] All done!")
+        print(f"[SUCCESS] CDS extraction successful: {cds_output}")
     else:
-        print("[!] gffread 运Failed")
+        print("[ERROR] gffread execution failed:")
         print(result.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

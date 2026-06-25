@@ -1,55 +1,36 @@
 # Changelog
 
-All notable changes to GraphAllele are documented in this file.
+All notable changes to GraphAllele are documented here.
 
----
+## v1.2
 
-## [v1.1] - 2025-04-02
+Maintenance and packaging release. The core algorithms are unchanged from the
+internal development build; this release standardizes the package layout and
+removes environment-specific code so it can be run anywhere.
 
-### Added
+### Packaging
+- Consolidated the per-dataset run scripts into a single, fully parameterized `workflow/run_GraphAllele.sh` with a `USER CONFIGURATION` block at the top.
+- Removed all hardcoded absolute paths, user accounts, and references to specific conda installations. Conda activation now resolves the environment via `conda info --base` with `$HOME`-based fallbacks.
+- Removed scheduler (PBS) directives from the run script; it is now a plain shell script that can be wrapped for any scheduler.
+- Removed internal/experimental scripts that were not part of the pipeline (batch parameter-sweep submitter, per-dataset result collectors, and standalone evaluation scripts).
+- Added `data/README.md` describing the expected inputs.
+- Updated `README.md`, `INSTALL.md`, `environment.yml`, and `.gitignore` to match the actual code and outputs.
 
-- **`bin/run_ortholog.sh`**: New automated JCVI pairwise ortholog analysis script.
-  - Automatically discovers species from `.cds` and `.bed` file pairs in the input directory.
-  - Iterates over all pairwise species combinations and runs `jcvi.compara.catalog ortholog`.
-  - Configurable `CSCORE` threshold (default: 0.99) and `--no_strip_names` mode.
-  - Validates that at least 2 valid species are found before proceeding.
+### Documentation fixes
+- Documented the `--verify_ratio` parameter (default 0.35).
+- Corrected the documented output filenames: the genome-wide matrix is `PolyAlleler_Global_Matrix_Cleaned_<paramtag>.tsv`, accompanied by a flat `my_clusters_<paramtag>.tsv` list.
+- Corrected the documented column layout: the genome-wide matrix uses `Allele_<SUFFIX>` columns plus a `Salvaged_Genes` column, while the per-group `07.FINAL_ALLELE.tsv` uses `Chr{NN}{SUFFIX}` columns plus `Unplaced_or_Translocated`.
 
-- **`generate_clean_clusters_auto()` function** in the main workflow:
-  - Post-processing module that merges all `Group_Chr*/07.FINAL_ALLELE.tsv` files into a single normalized global matrix.
-  - Outputs `PolyAlleler_Global_Matrix_Cleaned.tsv` with standardized columns (`ClusterID`, `Ref_Gene`, `Ref_Locus`, `Allele_A` through `Allele_N`).
-  - Outputs `my_clusters.tsv` in k-mer format (`ClusterID` + comma-separated gene list) for downstream analysis.
-  - Handles multi-value allele entries (comma-separated genes within a cell) and maps them to the correct subgenome columns.
+### Algorithms (carried over from the internal build)
+- **Unified gene-ID handling** (`safe_extract_id`): consistent stripping of `gene:` / `transcript:` prefixes and trailing transcript suffixes across all modules.
+- **BLAST sandboxing**: all BLAST databases are built inside temporary directories to avoid polluting reference data directories.
+- **Functional sequence-homology expansion**: BLASTP now recovers high-identity unclustered paralogs/translocated copies into the matrix.
+- **`Unplaced_or_Translocated` handling** in clustering and verification, with comma-separated multi-gene cells.
+- **OrthoGroup-based gene rescue** in verification, placing same-OG members back into the correct subgenome column.
+- **Tactical Sniper** early termination for intra-group OrthoFinder: backs up `Orthogroups.tsv` on detection, then SIGTERM → (grace period) → SIGKILL of the process group, skipping MSA/tree steps.
+- **Smart Subgenome Backfilling** when merging the genome-wide matrix.
+- **Breakpoint resume** for tandem and synteny steps.
 
-- **`--protein` flag** added to the `prepare_jcvi.py` call in Step 1 to ensure protein sequences are extracted alongside CDS.
+## v1.0
 
-### Changed
-
-- **Global merge logic improved**: The pipeline now uses `pandas.concat()` to merge all per-group `07.FINAL_ALLELE.tsv` files, with globally re-numbered `ClusterID` values (`Global_Cluster_000000`, `Global_Cluster_000001`, ...). After the raw merge, the new `generate_clean_clusters_auto()` function is called to produce the normalized output.
-
-- **Sequential execution messaging**: Pipeline startup now prints `"Starting pipeline sequentially to protect HPC NFS I/O..."` to explicitly communicate that chromosome groups are processed one by one, which avoids I/O contention on HPC shared filesystems.
-
-- **Error handling enhanced**:
-  - On failure, the pipeline now prints `[FATAL ERROR]` with the specific chromosome group that failed.
-  - An `[ACTION]` message guides the user to check error logs, fix the issue, and re-run (the pipeline will automatically resume from the failed group).
-  - The pipeline exits with `sys.exit(1)` on failure instead of silently continuing.
-
-- **PBS example script** (`workflow/run_GraphAllele.sh`) updated with a real-world example using `--auto_og`, `--cluster_dist 100`, `--min_c 2`, and a full A–N subgenome list.
-
-### Fixed
-
-- Single-group edge case: when only one chromosome group is processed (e.g., `-s 5 -e 5`), the pipeline now correctly skips the merge step and reports `"Just Single Group, skipping merging."`.
-
----
-
-## [v1.0] - 2025-03-20
-
-### Added
-
-- Initial release of GraphAllele.
-- 7-step pipeline: Prepare → Tandem → JCVI Synteny → Graph Clustering → OrthoGroup Verification → BLAST Expansion → Reference Calibration.
-- Breakpoint-resumable execution with per-step checkpointing.
-- Sequential chromosome group processing.
-- Intra-group OrthoFinder with early termination (Visual Sniper).
-- Support for up to 14 subgenomes (A–N).
-- PBS job submission template.
-- Conda environment file (`environment.yml`).
+- Initial release.
